@@ -57,24 +57,44 @@ public class AccessFilteredDocsAndPositionsEnum extends DocsAndPositionsEnum {
         this.authorizationsHolder = authorizationsHolder;
     }
 
+    long cost;
+    int endOffset, startOffset, currentPosition, freq, docId;
+    BytesRef payload;
+    boolean currentPositionConsumed = false;
+
     @Override
     public int nextPosition() throws IOException {
-        return docsAndPositionsEnum.nextPosition();
+
+        if(!currentPositionConsumed) {
+            currentPositionConsumed = true;
+            return currentPosition;
+        }
+
+        while (!hasAccess()) {
+
+        }
+
+//        payload = docsAndPositionsEnum.getPayload();
+//        endOffset = docsAndPositionsEnum.endOffset();
+//        startOffset = docsAndPositionsEnum.startOffset();
+//
+//        return docsAndPositionsEnum.nextPosition();
+        return currentPosition;
     }
 
     @Override
     public int startOffset() throws IOException {
-        return docsAndPositionsEnum.startOffset();
+        return startOffset;
     }
 
     @Override
     public int endOffset() throws IOException {
-        return docsAndPositionsEnum.endOffset();
+        return endOffset;
     }
 
     @Override
     public BytesRef getPayload() throws IOException {
-        return docsAndPositionsEnum.getPayload();
+        return payload;
     }
 
     @Override
@@ -89,38 +109,33 @@ public class AccessFilteredDocsAndPositionsEnum extends DocsAndPositionsEnum {
 
     @Override
     public int nextDoc() throws IOException {
-        try {
-            while (docsAndPositionsEnum.nextDoc() != NO_MORE_DOCS) {
-                if (hasAccess()) {
-                    return docID();
-                }
-            }
-            return NO_MORE_DOCS;
-        } catch (VisibilityParseException vpe) {
-            throw new IOException("Exception occurred parsing visibility", vpe);
-        }
+        currentPositionConsumed = false;
+        do {
+            docsAndPositionsEnum.nextDoc();
+        } while (docID() != NO_MORE_DOCS && !isPositionAvailable());
+
+        return docID();
     }
 
     @Override
     public int advance(int target) throws IOException {
-        int advance = docsAndPositionsEnum.advance(target);
-        if (advance != NO_MORE_DOCS) {
-            try {
-                if (hasAccess()) {
-                    return docID();
-                } else {
-                    //seek to next available
-                    int doc;
-                    while ((doc = nextDoc()) < target) {
-                    }
-                    return doc;
-                }
-            } catch (VisibilityParseException vpe) {
-                throw new IOException("Exception occurred parsing visibility",
-                                      vpe);
-            }
+        currentPositionConsumed = false;
+        docsAndPositionsEnum.advance(target);
+        while(docID() != NO_MORE_DOCS && !isPositionAvailable()) {
+            docsAndPositionsEnum.nextDoc();
         }
-        return NO_MORE_DOCS;
+
+        return docID();
+    }
+
+    private boolean isPositionAvailable() throws IOException{
+        do {
+            if(hasAccess()){
+                return true;
+            }
+        } while(currentPosition < freq() - 1);
+
+        return false;
     }
 
     @Override
@@ -128,16 +143,35 @@ public class AccessFilteredDocsAndPositionsEnum extends DocsAndPositionsEnum {
         return docsAndPositionsEnum.cost();
     }
 
-    protected boolean hasAccess() throws IOException, VisibilityParseException {
-        docsAndPositionsEnum.nextPosition();
+    protected boolean hasAccess() throws IOException/*, VisibilityParseException*/ {
+        payload = docsAndPositionsEnum.getPayload();
+        endOffset = docsAndPositionsEnum.endOffset();
+        startOffset = docsAndPositionsEnum.startOffset();
+//        freq = docsAndPositionsEnum.freq();
+//        docId = docsAndPositionsEnum.docID();
+//        cost = docsAndPositionsEnum.cost();
+        //this totally botches up positional information!  Can we read the payload without incrementing the position?
+        //save the current information
+        currentPosition = docsAndPositionsEnum.nextPosition();
+
         BytesRef payload = docsAndPositionsEnum.getPayload();
-        return payload == null ||
-               ALLAUTHSHOLDER.equals(authorizationsHolder) ||
-               this.authorizationsHolder.getVisibilityEvaluator().evaluate(
-                 new FieldVisibility(Arrays.copyOfRange(payload.bytes,
-                                                         payload.offset,
-                                                         payload.offset +
-                                                         payload.length)));
+        try {
+            if (payload == null ||
+                    AllAuthorizationsHolder.ALLAUTHSHOLDER.equals(authorizationsHolder) ||
+                    this.authorizationsHolder.getVisibilityEvaluator().evaluate(
+                            new FieldVisibility(Arrays.copyOfRange(payload.bytes,
+                                    payload.offset,
+                                    payload.offset +
+                                            payload.length)))) {
+                //granted access
+//            docsAndPositionsEnum.advance(currentPosition);
+                return true;
+            }
+        } catch(VisibilityParseException e) {
+
+        }
+        return false;
+
     }
 
     @Override

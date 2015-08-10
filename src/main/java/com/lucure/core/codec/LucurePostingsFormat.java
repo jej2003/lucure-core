@@ -23,6 +23,8 @@ import java.io.IOException;
 import org.apache.lucene.codecs.*;
 import org.apache.lucene.codecs.blocktree.BlockTreeTermsReader;
 import org.apache.lucene.codecs.blocktree.BlockTreeTermsWriter;
+import org.apache.lucene.codecs.lucene41.Lucene41PostingsReader;
+import org.apache.lucene.codecs.lucene41.Lucene41PostingsWriter;
 import org.apache.lucene.index.*;
 import org.apache.lucene.index.FieldInfo.IndexOptions;
 import org.apache.lucene.store.DataOutput;
@@ -436,45 +438,45 @@ public final class LucurePostingsFormat extends PostingsFormat {
 
   @Override
   public FieldsConsumer fieldsConsumer(SegmentWriteState state) throws IOException {
-    PostingsWriterBase postingsWriter = new LucurePostingsWriter(state);
+      PostingsWriterBase postingsWriter = new Lucene41PostingsWriter(state);
 
-    boolean success = false;
-    try {
-      FieldsConsumer ret = new BlockTreeTermsWriter(state, 
-                                                    postingsWriter,
-                                                    minTermBlockSize, 
-                                                    maxTermBlockSize);
-      success = true;
-      return new LucureMergingFieldsConsumer(ret);
-    } finally {
-      if (!success) {
-        IOUtils.closeWhileHandlingException(postingsWriter);
+      boolean success = false;
+      try {
+          FieldsConsumer ret = new BlockTreeTermsWriter(state,
+                  postingsWriter,
+                  minTermBlockSize,
+                  maxTermBlockSize);
+          success = true;
+          return new LucureMergingFieldsConsumer(ret);
+      } finally {
+          if (!success) {
+              IOUtils.closeWhileHandlingException(postingsWriter);
+          }
       }
-    }
   }
 
   @Override
   public FieldsProducer fieldsProducer(SegmentReadState state) throws IOException {
-    PostingsReaderBase postingsReader = new LucurePostingsReader(state.directory,
-                                                                state.fieldInfos,
-                                                                state.segmentInfo,
-                                                                state.context,
-                                                                state.segmentSuffix);
-    boolean success = false;
-    try {
-      FieldsProducer ret = new BlockTreeTermsReader(state.directory,
-                                                    state.fieldInfos,
-                                                    state.segmentInfo,
-                                                    postingsReader,
-                                                    state.context,
-                                                    state.segmentSuffix,
-                                                    state.termsIndexDivisor);
-      success = true;
-      return ret;
-    } finally {
-      if (!success) {
-        IOUtils.closeWhileHandlingException(postingsReader);
+      PostingsReaderBase postingsReader = new LucurePostingsReader(new Lucene41PostingsReader(state.directory,
+              state.fieldInfos,
+              state.segmentInfo,
+              state.context,
+              state.segmentSuffix));
+      boolean success = false;
+      try {
+          FieldsProducer ret = new BlockTreeTermsReader(state.directory,
+                  state.fieldInfos,
+                  state.segmentInfo,
+                  postingsReader,
+                  state.context,
+                  state.segmentSuffix,
+                  state.termsIndexDivisor);
+          success = true;
+          return ret;
+      } finally {
+          if (!success) {
+              IOUtils.closeWhileHandlingException(postingsReader);
+          }
       }
-    }
   }
 }
